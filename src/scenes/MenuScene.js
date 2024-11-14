@@ -35,17 +35,16 @@ export default class MenuScene extends Phaser.Scene {
       .setInteractive();
 
     hostButton.on("pointerdown", () => {
-      this.scene.start("GameScene", {
+      this.scene.start("CharacterSelectScene", {
         isHost: true,
         team: "red",
       });
     });
 
     joinButton.on("pointerdown", () => {
-      // Show dialog to enter host's peer ID
       const peerId = prompt("Enter host's game ID:");
       if (peerId) {
-        this.scene.start("GameScene", {
+        this.scene.start("CharacterSelectScene", {
           isHost: false,
           team: "blue",
           peerId: peerId,

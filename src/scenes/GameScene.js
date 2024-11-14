@@ -3,133 +3,530 @@ export default class GameScene extends Phaser.Scene {
     super({ key: "GameScene" });
   }
 
+  validateState() {
+    // List of required properties and their expected types
+    const requiredProps = {
+      team: "string",
+      health: "number",
+      player: "object",
+      weaponCooldowns: "object",
+      currentWeapon: "string",
+      aimingMode: "string",
+      carryingFlag: "any",
+      flagsAtBase: "object",
+      canDash: "boolean",
+      dashCooldown: "number",
+      lastDash: "number",
+      dashSpeed: "number",
+      deaths: "number",
+      cooldowns: "object",
+    };
+
+    // Check each property
+    for (const [prop, type] of Object.entries(requiredProps)) {
+      if (this[prop] === undefined) {
+        throw new Error(`Required property '${prop}' is undefined`);
+      }
+      if (type !== "any" && typeof this[prop] !== type) {
+        throw new Error(
+          `Property '${prop}' should be type '${type}' but is '${typeof this[
+            prop
+          ]}'`
+        );
+      }
+    }
+  }
+
   init(data) {
     if (!data || !data.team) {
-      console.error("No team specified");
-      this.team = "red"; // Default fallback
-    } else {
-      this.team = data.team;
+      throw new Error("No team specified in init data");
     }
-    this.bullets = null;
-    this.lastFired = 0;
-    this.fireRate = 100;
+
+    this.team = data.team;
+    this.character = data.character || { name: "Unknown" };
+    this.health = 100;
+
+    // Store character data
+    this.character = data.character || { name: "Unknown", color: "#ff0000" };
+    this.health = 100;
+
+    // Separate cooldowns for each weapon
+    this.weaponCooldowns = {
+      rifle: {
+        lastFired: 0,
+        cooldown: 100, // 100ms between rifle shots
+      },
+      rocketLauncher: {
+        lastFired: 0,
+        cooldown: 3000, // 3s between rocket shots
+      },
+    };
+
+    this.currentWeapon = "rifle"; // Default weapon
+    this.lastRocketFired = 0;
+    this.rocketCooldown = 3000; // 3 seconds
+    this.rockets = null;
+
+    // Add aiming mode
+    this.aimingMode = "keys"; // 'keys' or 'mouse'
+
+    // Add flag carrying state
+    this.carryingFlag = null;
+    this.flagsAtBase = {
+      red: true,
+      blue: true,
+    };
+
+    // Add dash mechanics
+    this.canDash = true;
+    this.dashCooldown = 3000; // 3 seconds
+    this.lastDash = 0;
+    this.dashSpeed = 400; // Speed boost when dashing
+    this.dashKey = null;
+
+    // Add death counter
+    this.deaths = 0;
+
+    // Add UI elements
+    this.cooldowns = {
+      rocket: {
+        current: 0,
+        max: 3000,
+      },
+      dash: {
+        current: 0,
+        max: 3000,
+      },
+    };
+
+    // Add scoring system
+    this.scores = {
+      red: {
+        captures: 0,
+        kills: 0,
+      },
+      blue: {
+        captures: 0,
+        kills: 0,
+      },
+    };
+
+    // Win condition
+    this.winningScore = 3;
+
+    // Rocket damage
+    this.rocketDamage = 50; // Increased from 30
+
+    // Dash distance reduced
+    this.dashDistance = 1600; // Reduced from 4800
   }
 
   create() {
-    // Create a simple tilemap programmatically
-    const width = 25;
-    const height = 19;
+    // Create a shorter tilemap
+    const width = 40;
+    const height = 25;
 
     // Create a simple map data array
     const mapData = [];
     for (let y = 0; y < height; y++) {
+      const row = [];
       for (let x = 0; x < width; x++) {
         // Ground at bottom
-        if (y === height - 1) mapData.push(1);
-        // Walls on sides
-        else if (x === 0 || x === width - 1) mapData.push(1);
-        // Platforms
-        else if (y === 15 && x > 5 && x < 10) mapData.push(1);
-        else if (y === 12 && x > 15 && x < 20) mapData.push(1);
-        // Empty space
-        else mapData.push(0);
+        if (y === height - 1) {
+          row.push(1);
+        }
+        // Center structure
+        else if (x === width / 2) {
+          // Main center opening
+          if (y > height - 8 && y < height - 4) {
+            row.push(0); // Large ground-level passage
+          }
+          // Upper center platform opening
+          else if (y > height - 15 && y < height - 12) {
+            row.push(0); // Upper passage
+          } else {
+            row.push(1); // Wall sections
+          }
+        }
+        // Center platforms
+        else if (Math.abs(x - width / 2) <= 3) {
+          // Platforms near center
+          if (y === height - 12 || y === height - 4) {
+            row.push(1); // Horizontal platforms at passages
+          } else {
+            row.push(0);
+          }
+        }
+        // Side walls
+        else if (x === 0 || x === width - 1) {
+          row.push(1);
+        }
+        // Flag platforms (raised and protected)
+        else if (y === height - 8) {
+          if ((x > 3 && x < 7) || (x > width - 8 && x < width - 4)) {
+            row.push(1); // Flag platforms
+          } else {
+            row.push(0);
+          }
+        }
+        // Base platforms and ramps
+        else if (y === height - 4) {
+          if ((x > 2 && x < 8) || (x > width - 9 && x < width - 3)) {
+            row.push(1); // Base platforms
+          } else {
+            row.push(0);
+          }
+        }
+        // Stepping stones and cover
+        else if (y === height - 12) {
+          if ((x > 8 && x < 11) || (x > width - 12 && x < width - 9)) {
+            row.push(1); // Mid-height platforms
+          } else {
+            row.push(0);
+          }
+        }
+        // High platforms for tactical advantage
+        else if (y === height - 16) {
+          if ((x > 5 && x < 8) || (x > width - 9 && x < width - 6)) {
+            row.push(1); // High platforms
+          } else {
+            row.push(0);
+          }
+        } else {
+          row.push(0);
+        }
       }
+      mapData.push(row);
     }
 
-    // Create tilemap with explicit dimensions
+    // Create tilemap
     this.map = this.make.tilemap({
       data: mapData,
       tileWidth: 32,
       tileHeight: 32,
-      width: width,
-      height: height,
     });
 
-    // Add tileset with explicit dimensions
-    const tileset = this.map.addTilesetImage("tiles", "tiles", 32, 32, 0, 0);
-    if (!tileset) {
-      console.error("Failed to create tileset");
-      return;
+    // Add tileset
+    const tiles = this.map.addTilesetImage("tiles");
+
+    // Create layer
+    this.groundLayer = this.map.createLayer(0, tiles, 0, 0);
+
+    // Set collisions for ALL tiles with index 1 (the black tiles)
+    this.groundLayer.setCollisionByExclusion([0]);
+
+    // Make sure physics world bounds match the map
+    this.physics.world.setBounds(0, 0, width * 32, height * 32);
+
+    // Enable debug rendering to see collision boxes
+    if (this.game.config.physics.arcade.debug) {
+      this.groundLayer.renderDebug(this.add.graphics(), {
+        tileColor: null,
+        collidingTileColor: new Phaser.Display.Color(243, 134, 48, 128),
+        faceColor: new Phaser.Display.Color(40, 39, 37, 255),
+      });
     }
 
-    // Create layer with explicit position
-    this.groundLayer = this.map.createLayer(0, tileset, 0, 0);
-    if (!this.groundLayer) {
-      console.error("Failed to create ground layer");
-      return;
-    }
-
-    // Set collisions for specific tiles
-    this.groundLayer.setCollision([1]);
-
-    // Create bullet group
+    // Create bullet group with physics
     this.bullets = this.physics.add.group({
       defaultKey: "bullet",
       maxSize: 20,
+      createCallback: (bullet) => {
+        bullet.setSize(4, 4);
+        bullet.body.onWorldBounds = true;
+        bullet.body.allowGravity = false;
+      },
     });
 
-    // Set spawn points
-    const spawnY = height * 32 - 200;
-    this.spawnPoints = {
-      red: { x: 100, y: spawnY },
-      blue: { x: width * 32 - 100, y: spawnY },
+    // Create rocket group with physics
+    this.rockets = this.physics.add.group({
+      defaultKey: "rocket",
+      maxSize: 3,
+      createCallback: (rocket) => {
+        rocket.setSize(8, 8);
+        rocket.body.onWorldBounds = true;
+        rocket.body.allowGravity = false;
+      },
+    });
+
+    // Update flag positions to match new platform heights
+    const redFlagX = 5 * 32;
+    const blueFlagX = (width - 5) * 32;
+    const flagY = (height - 11) * 32;
+
+    // Store original flag positions for respawning
+    this.flagBasePositions = {
+      red: { x: redFlagX, y: flagY },
+      blue: { x: blueFlagX, y: flagY },
     };
 
-    // Create player with error checking
-    const spawnPoint = this.spawnPoints[this.team];
-    if (!spawnPoint) {
-      console.error("Invalid spawn point");
-      return;
-    }
+    // Create flags with physics
+    this.flags = {
+      red: this.physics.add.sprite(redFlagX, flagY, "red_flag"),
+      blue: this.physics.add.sprite(blueFlagX, flagY, "blue_flag"),
+    };
 
+    // Set up flag properties
+    Object.values(this.flags).forEach((flag) => {
+      flag.setCollideWorldBounds(true);
+      flag.setBounce(0.1);
+      flag.setDragX(100);
+      flag.setScale(0.8);
+      flag.team = flag.texture.key.split("_")[0]; // 'red' or 'blue'
+    });
+
+    // Update spawn points to be on same side as team's flag
+    const spawnY = (height - 2) * 32;
+    this.spawnPoints = {
+      red: { x: redFlagX, y: spawnY },
+      blue: { x: blueFlagX, y: spawnY },
+    };
+
+    // Create player without tinting
+    const spawnPoint = this.spawnPoints[this.team];
     this.player = this.physics.add.sprite(
       spawnPoint.x,
       spawnPoint.y,
       `${this.team}_soldier`
     );
-
-    if (!this.player) {
-      console.error("Failed to create player");
-      return;
-    }
-
     this.player.setBounce(0.2);
     this.player.setCollideWorldBounds(true);
 
-    // Create weapon
-    this.weapon = this.add.sprite(0, 0, "rifle");
-    this.weapon.setOrigin(0, 0.5);
+    // Set up camera with deadzone
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setBounds(0, 0, width * 32, height * 32);
 
-    // Create flags
-    this.flags = {
-      red: this.physics.add.sprite(100, spawnY, "red_flag"),
-      blue: this.physics.add.sprite(width * 32 - 100, spawnY, "blue_flag"),
-    };
-
-    // Set up collisions with error checking
-    if (this.groundLayer && this.groundLayer.tilemapLayer) {
-      this.physics.add.collider(this.player, this.groundLayer);
-      this.physics.add.collider(this.flags.red, this.groundLayer);
-      this.physics.add.collider(this.flags.blue, this.groundLayer);
-      this.physics.add.collider(this.bullets, this.groundLayer, (bullet) => {
-        bullet.destroy();
-      });
-    }
+    // Add camera deadzone for smoother scrolling
+    this.cameras.main.setDeadzone(200, 100);
 
     // Set world bounds
     this.physics.world.setBounds(0, 0, width * 32, height * 32);
 
-    // Set up camera
-    this.cameras.main.startFollow(this.player);
-    this.cameras.main.setBounds(0, 0, width * 32, height * 32);
+    // Create player UI container
+    this.playerUI = this.add.container(this.player.x, this.player.y - 50);
+
+    // Add player name and team color
+    const nameColor = this.team === this.team ? "#ffffff" : "#ff0000";
+    this.nameText = this.add
+      .text(0, 0, this.character.name, {
+        fontSize: "14px",
+        fill: nameColor,
+        backgroundColor: "#000",
+        padding: { x: 4, y: 2 },
+      })
+      .setOrigin(0.5);
+    this.playerUI.add(this.nameText);
+
+    // Add health bar background
+    this.healthBarBg = this.add.rectangle(0, 15, 50, 6, 0x000000);
+    this.playerUI.add(this.healthBarBg);
+
+    // Add health bar
+    this.healthBar = this.add.rectangle(0, 15, 50, 6, 0x00ff00);
+    this.playerUI.add(this.healthBar);
+
+    // Add rocket cooldown bar (smaller height)
+    this.rocketCooldownBg = this.add.rectangle(0, 22, 50, 3, 0x000000);
+    this.rocketCooldownBar = this.add.rectangle(0, 22, 50, 3, 0xff4400);
+    this.playerUI.add(this.rocketCooldownBg);
+    this.playerUI.add(this.rocketCooldownBar);
+
+    // Add dash cooldown bar (smaller height)
+    this.dashCooldownBg = this.add.rectangle(0, 26, 50, 3, 0x000000);
+    this.dashCooldownBar = this.add.rectangle(0, 26, 50, 3, 0x00ffff);
+    this.playerUI.add(this.dashCooldownBg);
+    this.playerUI.add(this.dashCooldownBar);
+
+    // Add death counter
+    this.deathText = this.add
+      .text(16, 70, "Deaths: 0", {
+        fontSize: "18px",
+        fill: "#fff",
+        backgroundColor: "#000",
+        padding: { x: 4, y: 2 },
+      })
+      .setScrollFactor(0);
+
+    // Create weapons
+    this.weapons = {
+      rifle: this.add.sprite(0, 0, "rifle"),
+      rocketLauncher: this.add.sprite(0, 0, "rocketLauncher"),
+    };
+
+    Object.values(this.weapons).forEach((weapon) => {
+      weapon.setOrigin(0, 0.5);
+    });
+
+    this.weapons.rocketLauncher.setVisible(false);
+
+    // Set up collisions
+    this.physics.add.collider(this.player, this.groundLayer, null, null, this);
+    this.physics.add.collider(this.flags.red, this.groundLayer);
+    this.physics.add.collider(this.flags.blue, this.groundLayer);
+
+    // Set up projectile collisions
+    this.physics.add.collider(this.bullets, this.groundLayer, (bullet) => {
+      bullet.destroy();
+    });
+
+    this.physics.add.collider(this.rockets, this.groundLayer, (rocket) => {
+      this.createExplosion(rocket.x, rocket.y);
+      rocket.destroy();
+    });
 
     // Input
     this.cursors = this.input.keyboard.createCursorKeys();
+    this.rifleKey = this.input.keyboard.addKey("E");
+    this.rocketKey = this.input.keyboard.addKey("Q");
 
     // Mouse input for shooting
     this.input.on("pointerdown", (pointer) => {
       this.shoot(pointer);
     });
+
+    // Add aiming mode toggle key
+    this.toggleAimKey = this.input.keyboard.addKey("T");
+
+    // Add aiming mode indicator text
+    this.aimModeText = this.add.text(
+      16,
+      16,
+      "Aim Mode: Keys (Press T to toggle)",
+      {
+        fontSize: "18px",
+        fill: "#fff",
+        backgroundColor: "#000",
+        padding: { x: 4, y: 2 },
+      }
+    );
+    this.aimModeText.setScrollFactor(0); // Fix to camera
+
+    // Add flag pickup overlap
+    this.physics.add.overlap(
+      this.player,
+      Object.values(this.flags),
+      this.handleFlagPickup,
+      null,
+      this
+    );
+
+    // Make carried flag more visible
+    this.events.on("update", () => {
+      if (this.carryingFlag) {
+        // Make flag larger when carried
+        this.carryingFlag.setScale(1.2);
+        // Add glow effect
+        this.carryingFlag.setTint(0xffffff);
+        // Position above player
+        this.carryingFlag.x = this.player.x;
+        this.carryingFlag.y = this.player.y - 40;
+      }
+    });
+
+    // Reset flag appearance when dropped/returned
+    const resetFlagAppearance = (flag) => {
+      flag.setScale(0.8);
+      flag.clearTint();
+    };
+
+    // Update handleFlagPickup to handle flag appearance
+    const originalHandleFlagPickup = this.handleFlagPickup;
+    this.handleFlagPickup = (player, flag) => {
+      if (flag.team === this.team && !this.flagsAtBase[flag.team]) {
+        // Return flag to base
+        flag.x = this.flagBasePositions[flag.team].x;
+        flag.y = this.flagBasePositions[flag.team].y;
+        this.flagsAtBase[flag.team] = true;
+        resetFlagAppearance(flag);
+        // ... rest of return logic ...
+      } else if (flag.team !== this.team && !this.carryingFlag) {
+        // Pick up enemy flag
+        this.carryingFlag = flag;
+        this.flagsAtBase[flag.team] = false;
+        // ... rest of pickup logic ...
+      }
+    };
+
+    // Add dash key
+    this.dashKey = this.input.keyboard.addKey("F");
+
+    // Add dash cooldown indicator
+    this.dashCooldownText = this.add.text(16, 40, "Dash Ready", {
+      fontSize: "18px",
+      fill: "#fff",
+      backgroundColor: "#000",
+      padding: { x: 4, y: 2 },
+    });
+    this.dashCooldownText.setScrollFactor(0);
+
+    // Set up bullet and rocket collision with players (will add when multiplayer)
+    this.physics.add.overlap(this.bullets, this.player, (player, bullet) => {
+      // Only take damage from enemy bullets
+      if (bullet.owner !== this.player) {
+        this.takeDamage(10);
+        bullet.destroy();
+      }
+    });
+
+    this.physics.add.overlap(this.rockets, this.player, (player, rocket) => {
+      this.createExplosion(rocket.x, rocket.y);
+      this.takeDamage(30);
+      rocket.destroy();
+    });
+
+    // Create smoke particles
+    this.smokeParticles = this.add.particles(0, 0, "bullet", {
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.5, end: 0 },
+      tint: 0x666666,
+      speed: 50,
+      lifespan: 1000,
+      blendMode: "ADD",
+      frequency: 50,
+      emitting: false,
+    });
+
+    // Add dash particles
+    this.dashParticles = this.add.particles(0, 0, "bullet", {
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      tint: this.team === "red" ? 0xff0000 : 0x0000ff, // Team colored particles
+      speed: 100,
+      lifespan: 500,
+      blendMode: "ADD",
+      frequency: 10,
+      emitting: false,
+      follow: this.player,
+    });
+
+    // Add dash trail effect
+    this.dashTrail = this.add.graphics();
+
+    // Add score display (top center)
+    this.scoreText = this.add
+      .text(400, 16, "", {
+        fontSize: "24px",
+        fill: "#fff",
+        backgroundColor: "#000",
+        padding: { x: 10, y: 5 },
+      })
+      .setScrollFactor(0)
+      .setOrigin(0.5);
+
+    this.updateScoreDisplay();
+
+    // Add player markers
+    this.playerMarkers = {};
+    this.createPlayerMarker(this.player, this.team);
+
+    // Validate state after creation
+    try {
+      this.validateState();
+    } catch (error) {
+      console.error("Scene validation failed:", error);
+      // You might want to handle this differently in production
+      throw error;
+    }
   }
 
   shoot(pointer) {
@@ -165,40 +562,563 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  createExplosion(x, y, owner) {
+    const explosion = this.add.circle(x, y, 120, 0xff0000, 0.5);
+
+    // Check for players in explosion radius
+    const explosionRadius = 120;
+    const distanceToPlayer = Phaser.Math.Distance.Between(
+      x,
+      y,
+      this.player.x,
+      this.player.y
+    );
+
+    if (distanceToPlayer <= explosionRadius) {
+      // Apply explosion knockback
+      const angle = Phaser.Math.Angle.Between(
+        x,
+        y,
+        this.player.x,
+        this.player.y
+      );
+      const force = 300 * (1 - distanceToPlayer / explosionRadius);
+      this.physics.velocityFromRotation(
+        angle,
+        force,
+        this.player.body.velocity
+      );
+
+      // Only take damage from own rockets or enemy rockets
+      if (owner === this.player || owner !== this.player) {
+        this.lastDamagedBy = "rocket";
+        this.lastAttacker = owner.team;
+        this.takeDamage(this.rocketDamage); // Using new higher damage
+      }
+    }
+
+    // Fade out and destroy explosion
+    this.tweens.add({
+      targets: explosion,
+      alpha: 0,
+      duration: 200,
+      ease: "Power2",
+      onComplete: () => explosion.destroy(),
+    });
+  }
+
+  switchWeapon(weapon) {
+    // Just switch weapons, don't fire
+    if (this.currentWeapon !== weapon) {
+      // Hide all weapons
+      Object.values(this.weapons).forEach((w) => w.setVisible(false));
+
+      // Show selected weapon
+      this.weapons[weapon].setVisible(true);
+      this.currentWeapon = weapon;
+    }
+
+    // Always try to fire when key is pressed
+    this.fireWeapon(weapon);
+  }
+
+  fireWeapon(weapon) {
+    const weaponState = this.weaponCooldowns[weapon];
+    const time = this.time.now;
+
+    if (time > weaponState.lastFired) {
+      if (weapon === "rifle") {
+        const bullet = this.bullets.get(this.player.x, this.player.y);
+        if (bullet) {
+          bullet.setActive(true).setVisible(true);
+          bullet.rotation = this.player.rotation;
+          bullet.owner = this.player; // Track bullet owner
+
+          const speed = 600;
+          this.physics.velocityFromRotation(
+            this.player.rotation,
+            speed,
+            bullet.body.velocity
+          );
+
+          weaponState.lastFired = time + weaponState.cooldown;
+
+          this.time.delayedCall(1000, () => {
+            if (bullet.active) {
+              bullet.destroy();
+            }
+          });
+        }
+      } else if (weapon === "rocketLauncher") {
+        const spawnDistance = 40;
+        const spawnX =
+          this.player.x + Math.cos(this.player.rotation) * spawnDistance;
+        const spawnY =
+          this.player.y + Math.sin(this.player.rotation) * spawnDistance;
+
+        const rocket = this.rockets.get(spawnX, spawnY);
+        if (rocket) {
+          rocket
+            .setActive(true)
+            .setVisible(true)
+            .setCollideWorldBounds(true)
+            .setScale(2); // Make rocket 2x bigger
+          rocket.body.enable = true;
+          rocket.rotation = this.player.rotation;
+          rocket.owner = this.player;
+
+          // Start smoke trail
+          this.smokeParticles.setPosition(rocket.x, rocket.y);
+          this.smokeParticles.start();
+
+          // Update smoke trail position
+          this.time.addEvent({
+            delay: 16,
+            repeat: -1,
+            callback: () => {
+              if (rocket.active) {
+                this.smokeParticles.setPosition(rocket.x, rocket.y);
+              } else {
+                this.smokeParticles.stop();
+              }
+            },
+          });
+
+          const speed = 400;
+          this.physics.velocityFromRotation(
+            this.player.rotation,
+            speed,
+            rocket.body.velocity
+          );
+
+          // Apply recoil to player
+          const recoilSpeed = 200;
+          const recoilAngle = this.player.rotation + Math.PI;
+          this.physics.velocityFromRotation(
+            recoilAngle,
+            recoilSpeed,
+            this.player.body.velocity
+          );
+
+          weaponState.lastFired = time + weaponState.cooldown;
+          this.cooldowns.rocket.current = weaponState.cooldown;
+
+          this.time.delayedCall(2000, () => {
+            if (rocket.active) {
+              this.createExplosion(rocket.x, rocket.y, rocket.owner);
+              rocket.destroy();
+              this.smokeParticles.stop();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  updatePlayerUI() {
+    if (!this.playerUI || !this.healthBar) return; // Add safety check
+
+    // Update UI position to follow player
+    this.playerUI.setPosition(this.player.x, this.player.y - 50);
+
+    // Update health bar width based on health percentage
+    const healthPercentage = this.health / 100;
+    this.healthBar.width = 50 * healthPercentage;
+
+    // Update health bar color based on health level
+    if (healthPercentage > 0.6) {
+      this.healthBar.setFillStyle(0x00ff00); // Green
+    } else if (healthPercentage > 0.3) {
+      this.healthBar.setFillStyle(0xffff00); // Yellow
+    } else {
+      this.healthBar.setFillStyle(0xff0000); // Red
+    }
+  }
+
   update() {
     if (!this.player.active) return;
 
-    // Player movement
+    // Handle aim mode toggle
+    if (Phaser.Input.Keyboard.JustDown(this.toggleAimKey)) {
+      this.aimingMode = this.aimingMode === "keys" ? "mouse" : "keys";
+      this.aimModeText.setText(
+        `Aim Mode: ${
+          this.aimingMode.charAt(0).toUpperCase() + this.aimingMode.slice(1)
+        } (Press T to toggle)`
+      );
+    }
+
+    // Player movement and aiming direction
     const onGround = this.player.body.onFloor();
     const moveSpeed = 160;
     const jumpForce = -330;
+    let aimAngle = this.player.rotation; // Keep current rotation if not moving
 
     if (this.cursors.left.isDown) {
       this.player.setVelocityX(-moveSpeed);
       if (!this.player.flipX) this.player.flipX = true;
+      if (this.aimingMode === "keys") {
+        aimAngle = Math.PI; // Aim left (180 degrees)
+      }
     } else if (this.cursors.right.isDown) {
       this.player.setVelocityX(moveSpeed);
       if (this.player.flipX) this.player.flipX = false;
+      if (this.aimingMode === "keys") {
+        aimAngle = 0; // Aim right (0 degrees)
+      }
     } else {
       this.player.setVelocityX(0);
     }
 
+    // Handle aiming based on mode
+    if (this.aimingMode === "keys") {
+      // Add diagonal aiming for key mode
+      if (this.cursors.up.isDown) {
+        if (this.cursors.left.isDown) {
+          aimAngle = (-3 * Math.PI) / 4; // Aim up-left (-135 degrees)
+        } else if (this.cursors.right.isDown) {
+          aimAngle = -Math.PI / 4; // Aim up-right (-45 degrees)
+        } else {
+          aimAngle = -Math.PI / 2; // Aim straight up (-90 degrees)
+        }
+      } else if (this.cursors.down.isDown) {
+        if (this.cursors.left.isDown) {
+          aimAngle = (3 * Math.PI) / 4; // Aim down-left (135 degrees)
+        } else if (this.cursors.right.isDown) {
+          aimAngle = Math.PI / 4; // Aim down-right (45 degrees)
+        } else {
+          aimAngle = Math.PI / 2; // Aim straight down (90 degrees)
+        }
+      }
+    } else {
+      // Mouse aiming
+      aimAngle = Phaser.Math.Angle.Between(
+        this.player.x,
+        this.player.y,
+        this.input.activePointer.worldX,
+        this.input.activePointer.worldY
+      );
+    }
+
+    // Handle jumping
     if (this.cursors.up.isDown && onGround) {
       this.player.setVelocityY(jumpForce);
     }
 
-    // Update weapon position and rotation
-    const angle = Phaser.Math.Angle.Between(
-      this.player.x,
-      this.player.y,
-      this.input.activePointer.worldX,
-      this.input.activePointer.worldY
+    // Update player and weapon rotation
+    this.player.rotation = aimAngle;
+    const currentWeaponSprite = this.weapons[this.currentWeapon];
+    currentWeaponSprite.setPosition(this.player.x, this.player.y);
+    currentWeaponSprite.rotation = aimAngle;
+
+    // Handle weapon switching and firing
+    if (Phaser.Input.Keyboard.JustDown(this.rifleKey)) {
+      this.switchWeapon("rifle");
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.rocketKey)) {
+      this.switchWeapon("rocketLauncher");
+    }
+
+    // Update UI
+    this.updatePlayerUI();
+
+    // Update carried flag position and check for capture
+    if (this.carryingFlag) {
+      this.carryingFlag.x = this.player.x;
+      this.carryingFlag.y = this.player.y - 40;
+
+      // Check if player is touching their own flag for instant capture
+      const ownFlag = this.flags[this.team];
+      const distToOwnFlag = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        ownFlag.x,
+        ownFlag.y
+      );
+
+      // If touching own flag, instant capture
+      if (distToOwnFlag < 32) {
+        // Using player hitbox size
+        // Handle flag capture
+        this.handleFlagCapture();
+
+        // Reset enemy flag position
+        this.carryingFlag.x = this.flagBasePositions[this.carryingFlag.team].x;
+        this.carryingFlag.y = this.flagBasePositions[this.carryingFlag.team].y;
+        this.flagsAtBase[this.carryingFlag.team] = true;
+        this.carryingFlag = null;
+
+        // Add capture effect/message
+        this.add
+          .text(this.player.x, this.player.y - 50, "Flag Captured!", {
+            fontSize: "16px",
+            fill: "#fff",
+          })
+          .setOrigin(0.5)
+          .destroy({ delay: 1000 });
+      }
+    }
+
+    // Drop flag on death
+    if (this.health <= 0 && this.carryingFlag) {
+      this.carryingFlag = null;
+    }
+
+    // Handle dashing
+    if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
+      this.handleDash();
+    }
+
+    // Update cooldown bars
+    this.updateCooldowns();
+
+    // Update player markers
+    Object.entries(this.playerMarkers).forEach(([playerId, marker]) => {
+      const player = playerId === this.player.id ? this.player : null; // Add other players when multiplayer
+      if (player) {
+        this.updatePlayerMarker(player, marker);
+      }
+    });
+  }
+
+  handleDash() {
+    const time = this.time.now;
+    if (time > this.lastDash + this.dashCooldown) {
+      // Calculate dash vector based on player's rotation
+      const dashAngle = this.player.rotation;
+
+      // Normalize the vector components
+      const dashVectorX = Math.cos(dashAngle);
+      const dashVectorY = Math.sin(dashAngle);
+      const magnitude = Math.sqrt(
+        dashVectorX * dashVectorX + dashVectorY * dashVectorY
+      );
+
+      // Apply normalized dash velocity
+      const dashSpeed = 2000; // Reduced from 8000 for better control
+      this.player.setVelocity(
+        (dashVectorX / magnitude) * dashSpeed,
+        (dashVectorY / magnitude) * dashSpeed
+      );
+
+      // Start particle emission
+      this.dashParticles.start();
+
+      // Draw dash trail
+      this.dashTrail.clear();
+      this.dashTrail.lineStyle(
+        3,
+        this.team === "red" ? 0xff0000 : 0x0000ff,
+        0.5
+      );
+
+      // Calculate trail end point using normalized vector
+      const trailLength = 100; // Visual trail length
+      const endX = this.player.x + (dashVectorX / magnitude) * trailLength;
+      const endY = this.player.y + (dashVectorY / magnitude) * trailLength;
+      this.dashTrail.lineBetween(this.player.x, this.player.y, endX, endY);
+
+      // Add drag to slow down after dash
+      this.player.setDrag(2000);
+
+      // Clean up effects
+      this.time.delayedCall(200, () => {
+        this.player.setDrag(0);
+        this.dashParticles.stop();
+
+        // Fade out trail
+        this.tweens.add({
+          targets: this.dashTrail,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => {
+            this.dashTrail.clear();
+            this.dashTrail.alpha = 1;
+          },
+        });
+      });
+
+      // Add motion blur effect
+      this.cameras.main.shake(100, 0.005);
+      this.cameras.main.flash(50, 255, 255, 255, true);
+
+      this.lastDash = time;
+      this.cooldowns.dash.current = this.dashCooldown;
+    }
+  }
+
+  takeDamage(amount) {
+    this.health = Math.max(0, this.health - amount);
+    this.updatePlayerUI();
+
+    if (this.health <= 0) {
+      // Increment death counter
+      this.deaths++;
+      this.deathText.setText(`Deaths: ${this.deaths}`);
+
+      // Handle player death
+      this.health = 100;
+      const spawnPoint = this.spawnPoints[this.team];
+      this.player.setPosition(spawnPoint.x, spawnPoint.y);
+
+      // Drop flag on death
+      if (this.carryingFlag) {
+        this.carryingFlag.x = this.player.x;
+        this.carryingFlag.y = this.player.y;
+        this.carryingFlag = null;
+      }
+    }
+  }
+
+  updateCooldowns() {
+    const time = this.time.now;
+
+    // Update rocket cooldown - matched to dash cooldown style
+    if (this.cooldowns.rocket.current > 0) {
+      this.cooldowns.rocket.current = Math.max(
+        0,
+        this.cooldowns.rocket.current - 16
+      );
+      const rocketProgress =
+        1 - this.cooldowns.rocket.current / this.cooldowns.rocket.max;
+      this.rocketCooldownBar.width = 50 * rocketProgress;
+    } else {
+      this.rocketCooldownBar.width = 50;
+    }
+
+    // Update dash cooldown
+    if (this.cooldowns.dash.current > 0) {
+      this.cooldowns.dash.current = Math.max(
+        0,
+        this.cooldowns.dash.current - 16
+      );
+      const dashProgress =
+        1 - this.cooldowns.dash.current / this.cooldowns.dash.max;
+      this.dashCooldownBar.width = 50 * dashProgress;
+    } else {
+      this.dashCooldownBar.width = 50;
+    }
+  }
+
+  handleFlagPickup(player, flag) {
+    // Can't pick up your own team's flag unless returning it
+    if (flag.team === this.team) {
+      if (!this.flagsAtBase[flag.team]) {
+        // Return flag to base
+        flag.x = this.flagBasePositions[flag.team].x;
+        flag.y = this.flagBasePositions[flag.team].y;
+        this.flagsAtBase[flag.team] = true;
+
+        // Add return effect/message
+        this.add
+          .text(player.x, player.y - 50, "Flag Returned!", {
+            fontSize: "16px",
+            fill: "#fff",
+          })
+          .setOrigin(0.5)
+          .destroy({ delay: 1000 });
+      }
+      return;
+    }
+
+    // Can't pick up enemy flag while carrying one
+    if (this.carryingFlag) return;
+
+    // Pick up enemy flag
+    this.carryingFlag = flag;
+    this.flagsAtBase[flag.team] = false;
+
+    // Add pickup effect/message
+    this.add
+      .text(player.x, player.y - 50, "Flag Taken!", {
+        fontSize: "16px",
+        fill: "#fff",
+      })
+      .setOrigin(0.5)
+      .destroy({ delay: 1000 });
+  }
+
+  createPlayerMarker(player, team) {
+    const markerSize = 10;
+    const color = team === "red" ? 0xff0000 : 0x0000ff;
+
+    const marker = this.add.triangle(
+      0,
+      0,
+      0,
+      -markerSize,
+      markerSize,
+      markerSize,
+      -markerSize,
+      markerSize,
+      color
     );
+    marker.setAlpha(0.8);
+    marker.setScrollFactor(0);
 
-    this.weapon.setPosition(this.player.x, this.player.y);
-    this.weapon.rotation = angle;
+    this.playerMarkers[player.id] = marker;
+  }
 
-    // Remove animation playing for now until we fix it
-    // We'll just flip the sprite based on direction
+  updatePlayerMarker(player, marker) {
+    const camera = this.cameras.main;
+    const isOnScreen = camera.worldView.contains(player.x, player.y);
+
+    if (!isOnScreen) {
+      // Calculate marker position at screen edge
+      const angle = Phaser.Math.Angle.Between(
+        camera.scrollX + camera.width / 2,
+        camera.scrollY + camera.height / 2,
+        player.x,
+        player.y
+      );
+
+      const distance = 20;
+      const screenX =
+        camera.width / 2 + Math.cos(angle) * (camera.width / 2 - distance);
+      const screenY =
+        camera.height / 2 + Math.sin(angle) * (camera.height / 2 - distance);
+
+      marker.setPosition(screenX, screenY);
+      marker.setRotation(angle);
+      marker.setVisible(true);
+    } else {
+      marker.setVisible(false);
+    }
+  }
+
+  updateScoreDisplay() {
+    // Only show captures, not kills
+    this.scoreText.setText(
+      `RED ${this.scores.red.captures} - BLUE ${this.scores.blue.captures}`
+    );
+  }
+
+  handleFlagCapture() {
+    // Update score when flag is captured
+    this.scores[this.team].captures++;
+    this.updateScoreDisplay();
+
+    // Check for win condition
+    if (this.scores[this.team].captures >= this.winningScore) {
+      this.gameWon(this.team);
+    }
+  }
+
+  gameWon(team) {
+    // Create win message
+    const winText = this.add
+      .text(400, 300, `${team.toUpperCase()} TEAM WINS!`, {
+        fontSize: "48px",
+        fill: team === "red" ? "#ff0000" : "#0000ff",
+        backgroundColor: "#000",
+        padding: { x: 20, y: 10 },
+      })
+      .setScrollFactor(0)
+      .setOrigin(0.5);
+
+    // Reset game after delay
+    this.time.delayedCall(3000, () => {
+      this.scene.start("MenuScene");
+    });
   }
 }

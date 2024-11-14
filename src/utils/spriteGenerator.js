@@ -11,7 +11,7 @@ export function createPlaceholderSprites() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Body
-    ctx.fillStyle = color;
+    ctx.fillStyle = "#ffffff"; // Make base sprite white so it can be tinted
     ctx.beginPath();
     ctx.ellipse(16, 20, 6, 10, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -36,24 +36,38 @@ export function createPlaceholderSprites() {
   drawSoldier("#0000ff");
   const blueSoldierData = canvas.toDataURL();
 
-  // Flag (16x32)
-  canvas.width = 16;
-  canvas.height = 32;
+  // Flag (32x48) - making flags bigger and more visible
+  canvas.width = 32;
+  canvas.height = 48;
 
-  // Red flag
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#ff0000";
-  ctx.fillRect(0, 0, 16, 16);
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 16, 2, 16);
+  function drawFlag(color) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Flag pole
+    ctx.fillStyle = "#999999";
+    ctx.fillRect(2, 0, 4, 48);
+
+    // Flag part
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(6, 4); // Start at top of flag
+    ctx.lineTo(28, 4); // Top edge
+    ctx.lineTo(28, 20); // Right edge
+    ctx.lineTo(6, 20); // Bottom edge
+    ctx.closePath();
+    ctx.fill();
+
+    // Base
+    ctx.fillStyle = "#666666";
+    ctx.fillRect(0, 44, 8, 4);
+  }
+
+  // Create red flag
+  drawFlag("#ff0000");
   const redFlagData = canvas.toDataURL();
 
-  // Blue flag
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0000ff";
-  ctx.fillRect(0, 0, 16, 16);
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 16, 2, 16);
+  // Create blue flag
+  drawFlag("#0000ff");
   const blueFlagData = canvas.toDataURL();
 
   // Weapon (24x8)
@@ -72,6 +86,40 @@ export function createPlaceholderSprites() {
   ctx.fillRect(0, 0, 4, 4);
   const bulletData = canvas.toDataURL();
 
+  // Rocket Launcher (32x12)
+  canvas.width = 32;
+  canvas.height = 12;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Main body
+  ctx.fillStyle = "#444444";
+  ctx.fillRect(0, 2, 32, 8);
+
+  // Launcher tip
+  ctx.fillStyle = "#666666";
+  ctx.beginPath();
+  ctx.arc(32, 6, 4, 0, Math.PI * 2);
+  ctx.fill();
+  const rocketLauncherData = canvas.toDataURL();
+
+  // Rocket (16x16) - doubled from 8x8
+  canvas.width = 16;
+  canvas.height = 16;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Rocket body
+  ctx.fillStyle = "#ff4444";
+  ctx.fillRect(0, 4, 16, 8);
+
+  // Rocket tip
+  ctx.beginPath();
+  ctx.moveTo(16, 8);
+  ctx.lineTo(12, 0);
+  ctx.lineTo(12, 16);
+  ctx.fill();
+
+  const rocketData = canvas.toDataURL();
+
   return {
     redSoldier: redSoldierData,
     blueSoldier: blueSoldierData,
@@ -79,5 +127,7 @@ export function createPlaceholderSprites() {
     blueFlag: blueFlagData,
     rifle: rifleData,
     bullet: bulletData,
+    rocketLauncher: rocketLauncherData,
+    rocket: rocketData,
   };
 }

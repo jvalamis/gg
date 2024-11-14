@@ -24,6 +24,10 @@ export default class BootScene extends Phaser.Scene {
     this.textures.addBase64("rifle", sprites.rifle);
     this.textures.addBase64("bullet", sprites.bullet);
 
+    // Add rocket launcher sprites
+    this.textures.addBase64("rocketLauncher", sprites.rocketLauncher);
+    this.textures.addBase64("rocket", sprites.rocket);
+
     // Create a simple tileset
     const canvas = document.createElement("canvas");
     canvas.width = 32;
