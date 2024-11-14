@@ -6,6 +6,13 @@ export default class BootScene extends Phaser.Scene {
   }
 
   preload() {
+    // Load character sprite
+    this.load.spritesheet(
+      "soldier",
+      "https://labs.phaser.io/assets/sprites/dude.png",
+      { frameWidth: 32, frameHeight: 48 }
+    );
+
     // Generate placeholder sprites
     const sprites = createPlaceholderSprites();
 

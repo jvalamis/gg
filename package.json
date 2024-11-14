@@ -11,7 +11,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "phaser": "^3.87.0"
+    "phaser": "^3.87.0",
+    "peerjs": "^1.5.2"
   },
   "devDependencies": {
     "http-server": "^14.1.1"

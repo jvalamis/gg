@@ -3,29 +3,37 @@ export function createPlaceholderSprites() {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
 
-  // Soldier sprite (32x48)
-  canvas.width = 32 * 9; // 9 frames for animation
-  canvas.height = 48;
+  // Soldier sprite (32x32)
+  canvas.width = 32;
+  canvas.height = 32;
 
-  // Red soldier
-  ctx.fillStyle = "#ff0000";
-  for (let i = 0; i < 9; i++) {
+  function drawSoldier(color) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
     // Body
-    ctx.fillRect(i * 32 + 8, 8, 16, 32);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(16, 20, 6, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     // Head
-    ctx.fillRect(i * 32 + 10, 0, 12, 12);
+    ctx.beginPath();
+    ctx.arc(16, 12, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gun mount point
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(16, 16, 2, 0, Math.PI * 2);
+    ctx.fill();
   }
+
+  // Create red soldier
+  drawSoldier("#ff0000");
   const redSoldierData = canvas.toDataURL();
 
-  // Blue soldier
-  ctx.fillStyle = "#0000ff";
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (let i = 0; i < 9; i++) {
-    // Body
-    ctx.fillRect(i * 32 + 8, 8, 16, 32);
-    // Head
-    ctx.fillRect(i * 32 + 10, 0, 12, 12);
-  }
+  // Create blue soldier
+  drawSoldier("#0000ff");
   const blueSoldierData = canvas.toDataURL();
 
   // Flag (16x32)

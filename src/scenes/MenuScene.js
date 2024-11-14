@@ -12,34 +12,45 @@ export default class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Add team selection buttons
-    const redButton = this.add
-      .text(400, 300, "Join Red Team", {
+    // Host game button
+    const hostButton = this.add
+      .text(400, 300, "Host Game", {
         fontSize: "24px",
-        fill: "#ff0000",
+        fill: "#ffffff",
         backgroundColor: "#333",
         padding: { x: 10, y: 5 },
       })
       .setOrigin(0.5)
       .setInteractive();
 
-    const blueButton = this.add
-      .text(400, 350, "Join Blue Team", {
+    // Join game button
+    const joinButton = this.add
+      .text(400, 350, "Join Game", {
         fontSize: "24px",
-        fill: "#0000ff",
+        fill: "#ffffff",
         backgroundColor: "#333",
         padding: { x: 10, y: 5 },
       })
       .setOrigin(0.5)
       .setInteractive();
 
-    // Handle team selection
-    redButton.on("pointerdown", () => {
-      this.scene.start("GameScene", { team: "red" });
+    hostButton.on("pointerdown", () => {
+      this.scene.start("GameScene", {
+        isHost: true,
+        team: "red",
+      });
     });
 
-    blueButton.on("pointerdown", () => {
-      this.scene.start("GameScene", { team: "blue" });
+    joinButton.on("pointerdown", () => {
+      // Show dialog to enter host's peer ID
+      const peerId = prompt("Enter host's game ID:");
+      if (peerId) {
+        this.scene.start("GameScene", {
+          isHost: false,
+          team: "blue",
+          peerId: peerId,
+        });
+      }
     });
   }
 }
