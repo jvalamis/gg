@@ -25,15 +25,15 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install dependencies and generate lock file
+      - name: Install dependencies
         run: npm install
 
       - name: Create dist directory
         run: |
           mkdir -p dist
-          cp -r src/* dist/
+          cp -r src dist/
+          cp index.html dist/
           cp package.json dist/
-          cp package-lock.json dist/
           cp config.js dist/
 
       - name: Setup Pages

@@ -6,13 +6,21 @@ A browser-based multiplayer 2D shooter inspired by Soldat, built with Phaser 3.
 
 🎮 [Play the game](https://jvalamis.github.io/gg/)
 
-## Features
+## Current Features
 
-- 2D platformer physics
-- Player movement and jumping
-- Mouse aim control
-- Camera follows player
-- Basic platform collisions
+- Basic Phaser 3 setup
+- GitHub Pages deployment
+- Development environment
+- Basic platformer physics
+
+## In Development
+
+Currently working on:
+
+- Tilemap-based level design
+- Player movement physics
+- Wall jumping mechanics
+- Weapon aiming system
 
 ## Development
 
