@@ -119,6 +119,13 @@ export default class GameScene extends Phaser.Scene {
 
     // Dash distance reduced
     this.dashDistance = 1600; // Reduced from 4800
+
+    // Add power-up state
+    this.powerUpActive = false;
+    this.powerUpTimer = null;
+    this.powerUpRespawnTimer = null;
+    this.powerUpSprite = null;
+    this.powerUpEffectText = null;
   }
 
   create() {
@@ -370,7 +377,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.physics.add.collider(this.rockets, this.groundLayer, (rocket) => {
-      this.createExplosion(rocket.x, rocket.y);
+      this.createExplosion(rocket.x, rocket.y, rocket.owner || null);
       rocket.destroy();
     });
 
@@ -386,20 +393,6 @@ export default class GameScene extends Phaser.Scene {
 
     // Add aiming mode toggle key
     this.toggleAimKey = this.input.keyboard.addKey("T");
-
-    // Add aiming mode indicator text
-    this.aimModeText = this.add.text(
-      16,
-      16,
-      "Aim Mode: Keys (Press T to toggle)",
-      {
-        fontSize: "18px",
-        fill: "#fff",
-        backgroundColor: "#000",
-        padding: { x: 4, y: 2 },
-      }
-    );
-    this.aimModeText.setScrollFactor(0); // Fix to camera
 
     // Add flag pickup overlap
     this.physics.add.overlap(
@@ -450,14 +443,28 @@ export default class GameScene extends Phaser.Scene {
     // Add dash key
     this.dashKey = this.input.keyboard.addKey("F");
 
-    // Add dash cooldown indicator
-    this.dashCooldownText = this.add.text(16, 40, "Dash Ready", {
-      fontSize: "18px",
-      fill: "#fff",
-      backgroundColor: "#000",
-      padding: { x: 4, y: 2 },
-    });
-    this.dashCooldownText.setScrollFactor(0);
+    // Move score display to bottom center with no background, just outline
+    this.scoreText = this.add
+      .text(400, 550, "", {
+        fontSize: "32px",
+        fill: "#fff",
+        stroke: "#000", // Black outline
+        strokeThickness: 4, // Thick enough to read
+        padding: { x: 10, y: 5 },
+      })
+      .setScrollFactor(0)
+      .setOrigin(0.5);
+
+    // Add death counter display at bottom left with no background, just outline
+    this.deathCountText = this.add
+      .text(16, 550, "", {
+        fontSize: "24px",
+        fill: "#fff",
+        stroke: "#000", // Black outline
+        strokeThickness: 3, // Thick enough to read
+        padding: { x: 4, y: 2 },
+      })
+      .setScrollFactor(0);
 
     // Set up bullet and rocket collision with players (will add when multiplayer)
     this.physics.add.overlap(this.bullets, this.player, (player, bullet) => {
@@ -469,7 +476,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.physics.add.overlap(this.rockets, this.player, (player, rocket) => {
-      this.createExplosion(rocket.x, rocket.y);
+      this.createExplosion(rocket.x, rocket.y, rocket.owner || null);
       this.takeDamage(30);
       rocket.destroy();
     });
@@ -502,22 +509,95 @@ export default class GameScene extends Phaser.Scene {
     // Add dash trail effect
     this.dashTrail = this.add.graphics();
 
-    // Add score display (top center)
-    this.scoreText = this.add
-      .text(400, 16, "", {
-        fontSize: "24px",
-        fill: "#fff",
-        backgroundColor: "#000",
-        padding: { x: 10, y: 5 },
-      })
-      .setScrollFactor(0)
-      .setOrigin(0.5);
-
-    this.updateScoreDisplay();
+    // Create death counter for all players
+    this.deathCounts = {
+      red: 0,
+      blue: 0,
+    };
 
     // Add player markers
     this.playerMarkers = {};
     this.createPlayerMarker(this.player, this.team);
+
+    // Add commands help text in bottom right
+    const commandsText = [
+      "Controls:",
+      "E - Fire Rifle",
+      "Q - Fire Rocket",
+      "F - Dash",
+      "T - Toggle Aim Mode",
+      "Arrow Keys - Move",
+      "Up - Jump",
+    ].join("\n");
+
+    this.add
+      .text(750, 500, commandsText, {
+        fontSize: "16px",
+        fill: "#fff",
+        stroke: "#000",
+        strokeThickness: 4,
+        align: "right",
+      })
+      .setOrigin(1, 1) // Align to bottom right
+      .setScrollFactor(0) // Fix to camera
+      .setAlpha(0.8); // Slightly transparent
+
+    // Add power-up in center top
+    this.createPowerUp();
+
+    // Add power-up timer text (hidden initially)
+    this.powerUpTimerText = this.add
+      .text(400, 50, "", {
+        fontSize: "24px",
+        fill: "#f7931a",
+        stroke: "#000",
+        strokeThickness: 4,
+      })
+      .setScrollFactor(0)
+      .setOrigin(0.5)
+      .setVisible(false);
+
+    // Show game ID for all players in top-right corner
+    const gameId = this.registry.get("gameId");
+    if (gameId) {
+      // Create a more visible game ID display
+      const gameIdText = this.add
+        .text(400, 30, `Game ID: ${gameId}`, {
+          fontSize: "24px",
+          fill: "#fff",
+          stroke: "#000",
+          strokeThickness: 3,
+          backgroundColor: "#333333",
+          padding: { x: 10, y: 5 },
+        })
+        .setOrigin(0.5, 0)
+        .setScrollFactor(0)
+        .setDepth(1000);
+
+      // Add copy button
+      const copyButton = this.add
+        .text(gameIdText.x + 150, 30, "Copy", {
+          fontSize: "20px",
+          fill: "#fff",
+          backgroundColor: "#444444",
+          padding: { x: 10, y: 5 },
+        })
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(1000)
+        .setInteractive();
+
+      copyButton.on("pointerdown", () => {
+        navigator.clipboard.writeText(gameId).then(() => {
+          copyButton.setText("Copied!");
+          this.time.delayedCall(1000, () => {
+            copyButton.setText("Copy");
+          });
+        });
+      });
+    } else {
+      console.warn("No game ID found in registry");
+    }
 
     // Validate state after creation
     try {
@@ -590,11 +670,11 @@ export default class GameScene extends Phaser.Scene {
       );
 
       // Only take damage from own rockets or enemy rockets
-      if (owner === this.player || owner !== this.player) {
-        this.lastDamagedBy = "rocket";
-        this.lastAttacker = owner.team;
-        this.takeDamage(this.rocketDamage); // Using new higher damage
-      }
+      // Check if owner exists and has a team property
+      const ownerTeam = owner && owner.team ? owner.team : null;
+      this.lastDamagedBy = "rocket";
+      this.lastAttacker = ownerTeam;
+      this.takeDamage(this.rocketDamage);
     }
 
     // Fade out and destroy explosion
@@ -733,6 +813,13 @@ export default class GameScene extends Phaser.Scene {
     } else {
       this.healthBar.setFillStyle(0xff0000); // Red
     }
+
+    // Add golden glow to health bar when power-up is active
+    if (this.powerUpActive) {
+      this.healthBar.setStrokeStyle(2, 0xf7931a);
+    } else {
+      this.healthBar.setStrokeStyle(0);
+    }
   }
 
   update() {
@@ -812,7 +899,7 @@ export default class GameScene extends Phaser.Scene {
     currentWeaponSprite.rotation = aimAngle;
 
     // Handle weapon switching and firing
-    if (Phaser.Input.Keyboard.JustDown(this.rifleKey)) {
+    if (Phaser.Input.Keyboard.JustDown(this.rifleKey) || this.rifleKey.isDown) {
       this.switchWeapon("rifle");
     }
     if (Phaser.Input.Keyboard.JustDown(this.rocketKey)) {
@@ -884,24 +971,14 @@ export default class GameScene extends Phaser.Scene {
   handleDash() {
     const time = this.time.now;
     if (time > this.lastDash + this.dashCooldown) {
-      // Calculate dash vector based on player's rotation
-      const dashAngle = this.player.rotation;
+      // Use rocket explosion radius (120) as dash distance
+      const dashDistance = 120;
+      const targetX =
+        this.player.x + Math.cos(this.player.rotation) * dashDistance;
+      const targetY =
+        this.player.y + Math.sin(this.player.rotation) * dashDistance;
 
-      // Normalize the vector components
-      const dashVectorX = Math.cos(dashAngle);
-      const dashVectorY = Math.sin(dashAngle);
-      const magnitude = Math.sqrt(
-        dashVectorX * dashVectorX + dashVectorY * dashVectorY
-      );
-
-      // Apply normalized dash velocity
-      const dashSpeed = 2000; // Reduced from 8000 for better control
-      this.player.setVelocity(
-        (dashVectorX / magnitude) * dashSpeed,
-        (dashVectorY / magnitude) * dashSpeed
-      );
-
-      // Start particle emission
+      // Start particle effect at start position
       this.dashParticles.start();
 
       // Draw dash trail
@@ -911,19 +988,27 @@ export default class GameScene extends Phaser.Scene {
         this.team === "red" ? 0xff0000 : 0x0000ff,
         0.5
       );
+      this.dashTrail.lineBetween(
+        this.player.x,
+        this.player.y,
+        targetX,
+        targetY
+      );
 
-      // Calculate trail end point using normalized vector
-      const trailLength = 100; // Visual trail length
-      const endX = this.player.x + (dashVectorX / magnitude) * trailLength;
-      const endY = this.player.y + (dashVectorY / magnitude) * trailLength;
-      this.dashTrail.lineBetween(this.player.x, this.player.y, endX, endY);
+      // Teleport player
+      this.player.setPosition(targetX, targetY);
 
-      // Add drag to slow down after dash
-      this.player.setDrag(2000);
+      // Keep current velocity but reduce it
+      const currentVelX = this.player.body.velocity.x * 0.5;
+      const currentVelY = this.player.body.velocity.y * 0.5;
+      this.player.setVelocity(currentVelX, currentVelY);
+
+      // Visual effects
+      this.cameras.main.shake(100, 0.005);
+      this.cameras.main.flash(50, 255, 255, 255, true);
 
       // Clean up effects
       this.time.delayedCall(200, () => {
-        this.player.setDrag(0);
         this.dashParticles.stop();
 
         // Fade out trail
@@ -938,10 +1023,6 @@ export default class GameScene extends Phaser.Scene {
         });
       });
 
-      // Add motion blur effect
-      this.cameras.main.shake(100, 0.005);
-      this.cameras.main.flash(50, 255, 255, 255, true);
-
       this.lastDash = time;
       this.cooldowns.dash.current = this.dashCooldown;
     }
@@ -952,9 +1033,9 @@ export default class GameScene extends Phaser.Scene {
     this.updatePlayerUI();
 
     if (this.health <= 0) {
-      // Increment death counter
-      this.deaths++;
-      this.deathText.setText(`Deaths: ${this.deaths}`);
+      // Increment death counter for the appropriate team
+      this.deathCounts[this.team]++;
+      this.updateDeathCountDisplay();
 
       // Handle player death
       this.health = 100;
@@ -1086,8 +1167,14 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  updateDeathCountDisplay() {
+    this.deathCountText.setText(
+      `Deaths - Red: ${this.deathCounts.red} Blue: ${this.deathCounts.blue}`
+    );
+  }
+
   updateScoreDisplay() {
-    // Only show captures, not kills
+    // Update score display with larger text and team colors
     this.scoreText.setText(
       `RED ${this.scores.red.captures} - BLUE ${this.scores.blue.captures}`
     );
@@ -1120,5 +1207,99 @@ export default class GameScene extends Phaser.Scene {
     this.time.delayedCall(3000, () => {
       this.scene.start("MenuScene");
     });
+  }
+
+  createPowerUp() {
+    const x = (this.map.width * 32) / 2; // Center of map
+    const y = (this.map.height - 15) * 32; // Top middle platform
+
+    this.powerUpSprite = this.physics.add.sprite(x, y, "powerUp");
+    this.powerUpSprite.setScale(1);
+
+    // Add floating animation
+    this.tweens.add({
+      targets: this.powerUpSprite,
+      y: y - 10,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Add rotation
+    this.tweens.add({
+      targets: this.powerUpSprite,
+      angle: 360,
+      duration: 3000,
+      repeat: -1,
+      ease: "Linear",
+    });
+
+    // Add collision with player
+    this.physics.add.overlap(
+      this.player,
+      this.powerUpSprite,
+      this.collectPowerUp,
+      null,
+      this
+    );
+  }
+
+  collectPowerUp() {
+    if (this.powerUpSprite.active) {
+      // Hide power-up
+      this.powerUpSprite.setActive(false).setVisible(false);
+
+      // Activate power-up effects
+      this.powerUpActive = true;
+      this.health = 100; // Full heal
+
+      // Store original cooldown and set super fast cooldown
+      const originalCooldown = this.weaponCooldowns.rocketLauncher.cooldown;
+      this.weaponCooldowns.rocketLauncher.cooldown = 500; // 0.5 seconds
+
+      // Add visual effect to player
+      const powerUpGlow = this.add.circle(0, 0, 25, 0xf7931a, 0.3);
+      this.playerUI.add(powerUpGlow);
+
+      // Start countdown timer
+      let timeLeft = 10;
+      this.powerUpTimer = this.time.addEvent({
+        delay: 1000,
+        callback: () => {
+          timeLeft--;
+          this.powerUpTimerText
+            .setText(`Power-up: ${timeLeft}s`)
+            .setVisible(true);
+
+          if (timeLeft <= 0) {
+            // Remove power-up effects
+            this.powerUpActive = false;
+            this.weaponCooldowns.rocketLauncher.cooldown = originalCooldown;
+            powerUpGlow.destroy();
+            this.powerUpTimerText.setVisible(false);
+
+            // Start respawn timer
+            let respawnTime = 20;
+            this.powerUpRespawnTimer = this.time.addEvent({
+              delay: 1000,
+              callback: () => {
+                respawnTime--;
+                this.powerUpTimerText
+                  .setText(`Power-up respawn: ${respawnTime}s`)
+                  .setVisible(true);
+
+                if (respawnTime <= 0) {
+                  this.powerUpTimerText.setVisible(false);
+                  this.powerUpSprite.setActive(true).setVisible(true);
+                }
+              },
+              repeat: 19,
+            });
+          }
+        },
+        repeat: 9,
+      });
+    }
   }
 }

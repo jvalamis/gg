@@ -120,6 +120,25 @@ export function createPlaceholderSprites() {
 
   const rocketData = canvas.toDataURL();
 
+  // Bitcoin power-up (32x32)
+  canvas.width = 32;
+  canvas.height = 32;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw Bitcoin symbol
+  ctx.fillStyle = "#f7931a"; // Bitcoin orange
+  ctx.beginPath();
+  ctx.arc(16, 16, 15, 0, Math.PI * 2); // Circle background
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff"; // White ₿ symbol
+  ctx.font = "bold 24px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("₿", 16, 16);
+
+  const powerUpData = canvas.toDataURL();
+
   return {
     redSoldier: redSoldierData,
     blueSoldier: blueSoldierData,
@@ -129,5 +148,6 @@ export function createPlaceholderSprites() {
     bullet: bulletData,
     rocketLauncher: rocketLauncherData,
     rocket: rocketData,
+    powerUp: powerUpData,
   };
 }
