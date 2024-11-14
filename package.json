@@ -2,11 +2,9 @@
   "name": "game",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "start": "http-server src -p 8080",
+    "dev": "http-server src -p 8080 -c-1 --cors",
     "build": "mkdir -p dist && cp -r src/* dist/ && cp package.json dist/ && cp config.js dist/"
   },
   "author": "",
@@ -17,6 +15,6 @@
     "phaser": "^3.87.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "http-server": "^14.1.1"
   }
 }
