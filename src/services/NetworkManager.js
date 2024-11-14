@@ -2,6 +2,7 @@ export class NetworkManager {
   constructor() {
     this.peer = null;
     this.connection = null;
+    this.gameId = null;
   }
 
   init() {
@@ -9,6 +10,7 @@ export class NetworkManager {
 
     this.peer.on("open", (id) => {
       console.log("My peer ID is:", id);
+      this.gameId = id;
     });
 
     this.peer.on("connection", (conn) => {
@@ -19,6 +21,7 @@ export class NetworkManager {
 
   connect(hostId) {
     this.connection = this.peer.connect(hostId);
+    this.gameId = hostId;
     this.setupConnection();
   }
 
@@ -28,14 +31,11 @@ export class NetworkManager {
     });
 
     this.connection.on("data", (data) => {
-      // Handle received game data
       console.log("Received:", data);
     });
   }
 
-  sendGameData(data) {
-    if (this.connection && this.connection.open) {
-      this.connection.send(data);
-    }
+  getGameId() {
+    return this.gameId;
   }
 }
