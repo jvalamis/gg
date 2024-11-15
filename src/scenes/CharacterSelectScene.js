@@ -17,7 +17,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
   init(data) {
     this.isHost = data.isHost;
     this.team = data.team;
-    this.peerId = data.peerId;
+    this.networkManager = data.networkManager;
   }
 
   create() {
@@ -68,12 +68,12 @@ export default class CharacterSelectScene extends Phaser.Scene {
   }
 
   selectCharacter(character) {
-    // Start game scene with character data
+    // Pass networkManager to GameScene
     this.scene.start("GameScene", {
       isHost: this.isHost,
       team: this.team,
-      peerId: this.peerId,
       character: character,
+      networkManager: this.networkManager,
     });
   }
 }

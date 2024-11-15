@@ -126,6 +126,11 @@ export default class GameScene extends Phaser.Scene {
     this.powerUpRespawnTimer = null;
     this.powerUpSprite = null;
     this.powerUpEffectText = null;
+
+    this.networkManager = data.networkManager;
+    if (this.networkManager) {
+      this.networkManager.scene = this;
+    }
   }
 
   create() {
@@ -468,17 +473,40 @@ export default class GameScene extends Phaser.Scene {
 
     // Set up bullet and rocket collision with players (will add when multiplayer)
     this.physics.add.overlap(this.bullets, this.player, (player, bullet) => {
-      // Only take damage from enemy bullets
       if (bullet.owner !== this.player) {
         this.takeDamage(10);
+        if (this.networkManager) {
+          this.networkManager.sendBulletHit(
+            this.player.id,
+            bullet.x,
+            bullet.y,
+            10
+          );
+        }
         bullet.destroy();
       }
     });
 
     this.physics.add.overlap(this.rockets, this.player, (player, rocket) => {
-      this.createExplosion(rocket.x, rocket.y, rocket.owner || null);
-      this.takeDamage(30);
-      rocket.destroy();
+      if (rocket.owner !== this.player) {
+        const explosionX = rocket.x;
+        const explosionY = rocket.y;
+
+        // Create explosion effect
+        this.createExplosion(explosionX, explosionY, rocket.owner);
+
+        // Send rocket hit to other players
+        if (this.networkManager) {
+          this.networkManager.sendRocketHit(
+            explosionX,
+            explosionY,
+            this.player.id,
+            this.rocketDamage
+          );
+        }
+
+        rocket.destroy();
+      }
     });
 
     // Create smoke particles
@@ -557,46 +585,41 @@ export default class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false);
 
-    // Show game ID for all players in top-right corner
-    const gameId = this.registry.get("gameId");
+    // Show game ID for all players
+    const gameId = this.registry.get("gameId") || this.networkManager?.gameId;
     if (gameId) {
-      // Create a more visible game ID display
+      // Create game ID display that stays on screen
+      const gameIdContainer = this.add.container(400, 30);
+      gameIdContainer.setScrollFactor(0).setDepth(1000);
+
       const gameIdText = this.add
-        .text(400, 30, `Game ID: ${gameId}`, {
-          fontSize: "24px",
+        .text(0, 0, `Game ID: ${gameId}`, {
+          fontSize: "20px",
           fill: "#fff",
           stroke: "#000",
           strokeThickness: 3,
-          backgroundColor: "#333333",
-          padding: { x: 10, y: 5 },
         })
-        .setOrigin(0.5, 0)
-        .setScrollFactor(0)
-        .setDepth(1000);
+        .setOrigin(0.5, 0);
 
-      // Add copy button
       const copyButton = this.add
-        .text(gameIdText.x + 150, 30, "Copy", {
-          fontSize: "20px",
+        .text(80, 0, "Copy", {
+          fontSize: "16px",
           fill: "#fff",
-          backgroundColor: "#444444",
-          padding: { x: 10, y: 5 },
+          backgroundColor: "#444",
+          padding: { x: 8, y: 4 },
         })
         .setOrigin(0, 0)
-        .setScrollFactor(0)
-        .setDepth(1000)
-        .setInteractive();
-
-      copyButton.on("pointerdown", () => {
-        navigator.clipboard.writeText(gameId).then(() => {
-          copyButton.setText("Copied!");
-          this.time.delayedCall(1000, () => {
-            copyButton.setText("Copy");
+        .setInteractive()
+        .on("pointerdown", () => {
+          navigator.clipboard.writeText(gameId).then(() => {
+            copyButton.setText("Copied!");
+            this.time.delayedCall(1000, () => copyButton.setText("Copy"));
           });
         });
-      });
+
+      gameIdContainer.add([gameIdText, copyButton]);
     } else {
-      console.warn("No game ID found in registry");
+      console.warn("No game ID found");
     }
 
     // Validate state after creation
@@ -606,6 +629,12 @@ export default class GameScene extends Phaser.Scene {
       console.error("Scene validation failed:", error);
       // You might want to handle this differently in production
       throw error;
+    }
+
+    // Set scene in NetworkManager after player is created
+    if (this.networkManager) {
+      this.networkManager.setScene(this);
+      this.networkManager.processQueuedPlayers();
     }
   }
 
@@ -643,7 +672,18 @@ export default class GameScene extends Phaser.Scene {
   }
 
   createExplosion(x, y, owner) {
+    // Create explosion visual
     const explosion = this.add.circle(x, y, 120, 0xff0000, 0.5);
+
+    // Add explosion particles
+    const particles = this.add.particles(x, y, "bullet", {
+      speed: { min: 100, max: 200 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 },
+      lifespan: 500,
+      quantity: 20,
+      tint: 0xff4400,
+    });
 
     // Check for players in explosion radius
     const explosionRadius = 120;
@@ -670,12 +710,14 @@ export default class GameScene extends Phaser.Scene {
       );
 
       // Only take damage from own rockets or enemy rockets
-      // Check if owner exists and has a team property
       const ownerTeam = owner && owner.team ? owner.team : null;
-      this.lastDamagedBy = "rocket";
-      this.lastAttacker = ownerTeam;
-      this.takeDamage(this.rocketDamage);
+      if (ownerTeam !== this.team) {
+        this.takeDamage(this.rocketDamage);
+      }
     }
+
+    // Screen shake
+    this.cameras.main.shake(200, 0.01);
 
     // Fade out and destroy explosion
     this.tweens.add({
@@ -683,7 +725,10 @@ export default class GameScene extends Phaser.Scene {
       alpha: 0,
       duration: 200,
       ease: "Power2",
-      onComplete: () => explosion.destroy(),
+      onComplete: () => {
+        explosion.destroy();
+        particles.destroy();
+      },
     });
   }
 
@@ -728,6 +773,11 @@ export default class GameScene extends Phaser.Scene {
               bullet.destroy();
             }
           });
+        }
+
+        // Send shoot data to other player
+        if (this.networkManager) {
+          this.networkManager.sendShoot("rifle", this.player.rotation, 600);
         }
       } else if (weapon === "rocketLauncher") {
         const spawnDistance = 40;
@@ -790,6 +840,15 @@ export default class GameScene extends Phaser.Scene {
               this.smokeParticles.stop();
             }
           });
+
+          // Send shoot data to other player
+          if (this.networkManager) {
+            this.networkManager.sendShoot(
+              "rocketLauncher",
+              this.player.rotation,
+              400
+            );
+          }
         }
       }
     }
@@ -966,6 +1025,10 @@ export default class GameScene extends Phaser.Scene {
         this.updatePlayerMarker(player, marker);
       }
     });
+
+    if (this.networkManager) {
+      this.networkManager.sendPlayerPosition();
+    }
   }
 
   handleDash() {
@@ -1033,7 +1096,17 @@ export default class GameScene extends Phaser.Scene {
     this.updatePlayerUI();
 
     if (this.health <= 0) {
-      // Increment death counter for the appropriate team
+      // Send death info before resetting position
+      if (this.networkManager) {
+        this.networkManager.sendPlayerDeath(
+          this.player.x,
+          this.player.y,
+          this.carryingFlag !== null,
+          this.carryingFlag ? this.carryingFlag.team : null
+        );
+      }
+
+      // Increment death counter
       this.deathCounts[this.team]++;
       this.updateDeathCountDisplay();
 
@@ -1041,6 +1114,11 @@ export default class GameScene extends Phaser.Scene {
       this.health = 100;
       const spawnPoint = this.spawnPoints[this.team];
       this.player.setPosition(spawnPoint.x, spawnPoint.y);
+
+      // Send respawn position
+      if (this.networkManager) {
+        this.networkManager.sendPlayerRespawn(spawnPoint.x, spawnPoint.y);
+      }
 
       // Drop flag on death
       if (this.carryingFlag) {
@@ -1082,7 +1160,6 @@ export default class GameScene extends Phaser.Scene {
   }
 
   handleFlagPickup(player, flag) {
-    // Can't pick up your own team's flag unless returning it
     if (flag.team === this.team) {
       if (!this.flagsAtBase[flag.team]) {
         // Return flag to base
@@ -1090,33 +1167,21 @@ export default class GameScene extends Phaser.Scene {
         flag.y = this.flagBasePositions[flag.team].y;
         this.flagsAtBase[flag.team] = true;
 
-        // Add return effect/message
-        this.add
-          .text(player.x, player.y - 50, "Flag Returned!", {
-            fontSize: "16px",
-            fill: "#fff",
-          })
-          .setOrigin(0.5)
-          .destroy({ delay: 1000 });
+        // Send flag return to other player
+        if (this.networkManager) {
+          this.networkManager.sendFlagReturn(flag.team);
+        }
       }
-      return;
+    } else if (!this.carryingFlag) {
+      // Pick up enemy flag
+      this.carryingFlag = flag;
+      this.flagsAtBase[flag.team] = false;
+
+      // Send flag pickup to other player
+      if (this.networkManager) {
+        this.networkManager.sendFlagPickup(flag.team);
+      }
     }
-
-    // Can't pick up enemy flag while carrying one
-    if (this.carryingFlag) return;
-
-    // Pick up enemy flag
-    this.carryingFlag = flag;
-    this.flagsAtBase[flag.team] = false;
-
-    // Add pickup effect/message
-    this.add
-      .text(player.x, player.y - 50, "Flag Taken!", {
-        fontSize: "16px",
-        fill: "#fff",
-      })
-      .setOrigin(0.5)
-      .destroy({ delay: 1000 });
   }
 
   createPlayerMarker(player, team) {
@@ -1181,9 +1246,13 @@ export default class GameScene extends Phaser.Scene {
   }
 
   handleFlagCapture() {
-    // Update score when flag is captured
     this.scores[this.team].captures++;
     this.updateScoreDisplay();
+
+    // Send flag capture to other player
+    if (this.networkManager) {
+      this.networkManager.sendFlagCapture(this.carryingFlag.team);
+    }
 
     // Check for win condition
     if (this.scores[this.team].captures >= this.winningScore) {
@@ -1299,6 +1368,19 @@ export default class GameScene extends Phaser.Scene {
           }
         },
         repeat: 9,
+      });
+
+      // Send power-up collection to other player
+      if (this.networkManager) {
+        this.networkManager.sendPowerupCollect();
+      }
+
+      // When power-up respawns
+      this.time.delayedCall(20000, () => {
+        if (this.networkManager) {
+          this.networkManager.sendPowerupRespawn();
+        }
+        this.powerUpSprite.setActive(true).setVisible(true);
       });
     }
   }
